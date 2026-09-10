@@ -149,12 +149,21 @@ jobs:
               private lateinit var webView: WebView
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               private val tasks = ConcurrentHashMap<String, TaskInfo>()
+              private val infoTasks = ConcurrentHashMap<String, InfoTask>()
               private lateinit var downloadDir: File
 
               data class TaskInfo(
                   var progress: Float = 0f,
                   var status: String = "starting",
                   var filename: String = "",
+                  var error: String = ""
+              )
+
+              data class InfoTask(
+                  var status: String = "pending",
+                  var title: String = "",
+                  var thumbnail: String = "",
+                  var duration: Int = 0,
                   var error: String = ""
               )
 
@@ -243,28 +252,45 @@ jobs:
 
               inner class Bridge {
                   @JavascriptInterface
-                  fun getVideoInfo(url: String): String {
-                      return try {
-                          val request = YoutubeDLRequest(url)
-                          request.addOption("-j")
-                          request.addOption("--no-playlist")
-                          request.addOption("--no-warnings")
-                          request.addOption("--extractor-args", "youtube:player_client=android")
-                          val response = YoutubeDL.getInstance().execute(request)
-                          val jsonLine = response.out.lines().lastOrNull { it.trim().startsWith("{") } ?: "{}"
-                          val json = JSONObject(jsonLine)
-                          JSONObject().apply {
-                              put("ok", true)
-                              put("title", json.optString("title", ""))
-                              put("thumbnail", json.optString("thumbnail", ""))
-                              put("duration", json.optInt("duration", 0))
-                          }.toString()
-                      } catch (e: Throwable) {
-                          JSONObject().apply {
-                              put("ok", false)
-                              put("error", e.message ?: "unknown")
-                          }.toString()
+                  fun startGetInfo(url: String): String {
+                      val infoId = UUID.randomUUID().toString()
+                      infoTasks[infoId] = InfoTask()
+                      scope.launch {
+                          try {
+                              val request = YoutubeDLRequest(url)
+                              request.addOption("-j")
+                              request.addOption("--no-playlist")
+                              request.addOption("--no-warnings")
+                              request.addOption("--extractor-args", "youtube:player_client=android")
+                              request.addOption("--force-ipv4")
+                              request.addOption("--no-check-certificates")
+                              request.addOption("--geo-bypass")
+                              request.addOption("--socket-timeout", "15")
+                              val response = YoutubeDL.getInstance().execute(request)
+                              val jsonLine = response.out.lines().lastOrNull { it.trim().startsWith("{") } ?: "{}"
+                              val json = JSONObject(jsonLine)
+                              infoTasks[infoId]?.title = json.optString("title", "")
+                              infoTasks[infoId]?.thumbnail = json.optString("thumbnail", "")
+                              infoTasks[infoId]?.duration = json.optInt("duration", 0)
+                              infoTasks[infoId]?.status = "done"
+                          } catch (e: Throwable) {
+                              infoTasks[infoId]?.status = "error"
+                              infoTasks[infoId]?.error = e.message ?: "unknown"
+                          }
                       }
+                      return infoId
+                  }
+
+                  @JavascriptInterface
+                  fun getInfoResult(infoId: String): String {
+                      val t = infoTasks[infoId] ?: return "{\"status\":\"not_found\"}"
+                      return JSONObject().apply {
+                          put("status", t.status)
+                          put("title", t.title)
+                          put("thumbnail", t.thumbnail)
+                          put("duration", t.duration)
+                          put("error", t.error)
+                      }.toString()
                   }
 
                   @JavascriptInterface
@@ -279,6 +305,10 @@ jobs:
                               request.addOption("--no-playlist")
                               request.addOption("--no-warnings")
                               request.addOption("--extractor-args", "youtube:player_client=android")
+                              request.addOption("--force-ipv4")
+                              request.addOption("--no-check-certificates")
+                              request.addOption("--geo-bypass")
+                              request.addOption("--socket-timeout", "15")
                               request.addOption("--retries", "10")
                               request.addOption("--fragment-retries", "10")
                               if (format == "mp3") {
@@ -359,7 +389,7 @@ jobs:
 
           #splash { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 40%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .8s ease, visibility .8s; }
           #splash.hide { opacity: 0; visibility: hidden; }
-          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -1px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 40px rgba(255,152,0,.35); animation: glow 2s ease-in-out infinite alternate; margin-bottom: 20px; text-align: center; line-height: 1.2; padding: 0 20px; }
+          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -1px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: glow 2s ease-in-out infinite alternate; margin-bottom: 20px; text-align: center; line-height: 1.2; padding: 0 20px; }
           @keyframes glow { from { filter: drop-shadow(0 0 8px rgba(255,152,0,.4)); } to { filter: drop-shadow(0 0 24px rgba(74,158,255,.6)); } }
           .splash-sub { font-family: 'Cairo', sans-serif; font-size: 14px; color: #b0b0d0; font-weight: 600; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; }
           .splash-sub span { color: #ff9800; font-weight: 800; }
@@ -415,6 +445,8 @@ jobs:
           .bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #ff9800); width: 0%; transition: width .3s; }
           .footer { text-align: center; font-size: 11px; color: #6a6a8a; position: fixed; bottom: 20px; left: 0; right: 0; font-weight: 600; }
           .status-msg { text-align: center; padding: 20px; font-size: 14px; color: #ff9800; font-weight: 700; }
+          .loading-mini { display: inline-block; width: 14px; height: 14px; border: 2px solid #2a2a4a; border-top-color: #4a9eff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-left: 8px; }
+          @keyframes spin { to { transform: rotate(360deg); } }
 
           .history-item { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
           .history-item .h-title { flex: 1; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -492,7 +524,7 @@ jobs:
           <div class="footer">جميع الحقوق محفوظة لـ @JOKERICH</div>
 
           <script>
-          var fmt = 'mp4', quality = '1080', trim = false, pollTimer = null, videoDuration = 0;
+          var fmt = 'mp4', quality = '1080', trim = false, pollTimer = null, infoPollTimer = null, videoDuration = 0;
 
           setTimeout(function() {
           document.getElementById('splash').classList.add('hide');
@@ -571,29 +603,41 @@ jobs:
           }
           }
 
-          document.getElementById('url').addEventListener('blur', loadInfo);
           document.getElementById('url').addEventListener('change', loadInfo);
+          document.getElementById('url').addEventListener('blur', loadInfo);
 
           function loadInfo() {
           var url = document.getElementById('url').value.trim();
           if (!url) return;
-          setTimeout(function() {
+          if (infoPollTimer) { clearInterval(infoPollTimer); infoPollTimer = null; }
           try {
-          var res = Android.getVideoInfo(url);
-          var d = JSON.parse(res);
-          if (d.ok) {
-          videoDuration = d.duration;
+          var infoId = Android.startGetInfo(url);
           document.getElementById('preview').style.display = '';
+          document.getElementById('vtitle').innerHTML = 'جاري جلب المعلومات...<span class="loading-mini"></span>';
+          document.getElementById('thumb').src = '';
+          document.getElementById('vdur').textContent = '';
+          infoPollTimer = setInterval(function() {
+          try {
+          var d = JSON.parse(Android.getInfoResult(infoId));
+          if (d.status === 'done') {
+          videoDuration = d.duration;
           document.getElementById('thumb').src = d.thumbnail;
           document.getElementById('vtitle').textContent = d.title;
           document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
-          if (trim) {
+          if (trim && d.duration > 0) {
           document.getElementById('endTime').value = fmtTime(d.duration);
           updateTrimInfo();
           }
+          clearInterval(infoPollTimer);
+          infoPollTimer = null;
+          } else if (d.status === 'error') {
+          document.getElementById('preview').style.display = 'none';
+          clearInterval(infoPollTimer);
+          infoPollTimer = null;
           }
           } catch(e) {}
-          }, 100);
+          }, 700);
+          } catch(e) {}
           }
 
           function startDownload() {
