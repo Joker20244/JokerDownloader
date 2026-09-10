@@ -97,6 +97,439 @@ jobs:
               <application android:label="JokerDownloader"
                   android:usesCleartextTraffic="true"
                   android:hardwareAccelerated="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true"
+                      android:windowSoftInputMode="adjustResize"
+                      android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/jokerich/downloader/MainActivity.kt << 'EOF'
+          package com.jokerich.downloader
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.os.Environment
+          import android.webkit.JavascriptInterface
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import com.yausername.youtubedl_android.YoutubeDL
+          import com.yausername.youtubedl_android.YoutubeDLRequest
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.SupervisorJob
+          import kotlinx.coroutines.cancel
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+          import org.json.JSONObject
+          import java.io.File
+          import java.util.UUID
+          import java.util.concurrent.ConcurrentHashMap
+
+          class MainActivity : Activity() {
+              private lateinit var webView: WebView
+              private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+              private val tasks = ConcurrentHashMap<String, TaskInfo>()
+              private lateinit var downloadDir: File
+
+              data class TaskInfo(
+                  var progress: Float = 0f,
+                  var status: String = "starting",
+                  var filename: String = "",
+                  var error: String = ""
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  downloadDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
+                  downloadDir.mkdirs()
+
+                  webView = WebView(this)
+                  webView.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      allowFileAccess = true
+                      databaseEnabled = true
+                      setSupportZoom(false)
+                  }
+                  webView.webViewClient = WebViewClient()
+                  webView.addJavascriptInterface(Bridge(), "Android")
+                  setContentView(webView)
+
+                  webView.loadUrl("file:///android_asset/index.html")
+
+                  scope.launch {
+                      try {
+                          YoutubeDL.getInstance().init(applicationContext)
+                          try {
+                              YoutubeDL.getInstance().updateYoutubeDL(applicationContext, YoutubeDL.UpdateChannel.STABLE)
+                          } catch (e: Throwable) {
+                          }
+                          withContext(Dispatchers.Main) {
+                              webView.evaluateJavascript("window.onYtdlpReady && window.onYtdlpReady()", null)
+                          }
+                      } catch (e: Throwable) {
+                          val msg = (e.message ?: "unknown").replace("'", "\\'")
+                          withContext(Dispatchers.Main) {
+                              webView.evaluateJavascript("window.onYtdlpError && window.onYtdlpError('$msg')", null)
+                          }
+                      }
+                  }
+              }
+
+              inner class Bridge {
+                  @JavascriptInterface
+                  fun getVideoInfo(url: String): String {
+                      return try {
+                          val request = YoutubeDLRequest(url)
+                          request.addOption("-j")
+                          request.addOption("--no-playlist")
+                          request.addOption("--no-warnings")
+                          val response = YoutubeDL.getInstance().execute(request)
+                          val jsonLine = response.out.lines().lastOrNull { it.trim().startsWith("{") } ?: "{}"
+                          val json = JSONObject(jsonLine)
+                          JSONObject().apply {
+                              put("ok", true)
+                              put("title", json.optString("title", ""))
+                              put("thumbnail", json.optString("thumbnail", ""))
+                              put("duration", json.optInt("duration", 0))
+                          }.toString()
+                      } catch (e: Throwable) {
+                          JSONObject().apply {
+                              put("ok", false)
+                              put("error", e.message ?: "unknown")
+                          }.toString()
+                      }
+                  }
+
+                  @JavascriptInterface
+                  fun startDownload(url: String, format: String, quality: String, trim: Boolean, start: Int, end: Int): String {
+                      val taskId = UUID.randomUUID().toString()
+                      tasks[taskId] = TaskInfo()
+                      scope.launch {
+                          try {
+                              val request = YoutubeDLRequest(url)
+                              val outTpl = File(downloadDir, "%(title)s.%(ext)s").absolutePath
+                              request.addOption("-o", outTpl)
+                              request.addOption("--no-playlist")
+                              request.addOption("--no-warnings")
+                              if (format == "mp3") {
+                                  request.addOption("-x")
+                                  request.addOption("--audio-format", "mp3")
+                                  request.addOption("--audio-quality", quality + "k")
+                              } else {
+                                  request.addOption("-f", "best[height<=" + quality + "]/bestvideo[height<=" + quality + "]+bestaudio/best")
+                                  request.addOption("--merge-output-format", "mp4")
+                              }
+                              tasks[taskId]?.status = "downloading"
+                              YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
+                                  tasks[taskId]?.progress = progress
+                              }
+                              tasks[taskId]?.status = "done"
+                              tasks[taskId]?.progress = 100f
+                              val newest = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
+                              tasks[taskId]?.filename = newest?.name ?: "تم التحميل"
+                          } catch (e: Throwable) {
+                              tasks[taskId]?.status = "error"
+                              tasks[taskId]?.error = e.message ?: "unknown"
+                          }
+                      }
+                      return taskId
+                  }
+
+                  @JavascriptInterface
+                  fun getProgress(taskId: String): String {
+                      val t = tasks[taskId] ?: return "{\"status\":\"not_found\"}"
+                      return JSONObject().apply {
+                          put("status", t.status)
+                          put("percent", t.progress.toDouble())
+                          put("filename", t.filename)
+                          put("error", t.error)
+                      }.toString()
+                  }
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  scope.cancel()
+              }
+          }
+          EOF
+          cat > app/src/main/assets/index.html << 'HTMLEOF'
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+          <title>JokerDownloader</title>
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+          <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); color: #fff; min-height: 100vh; padding: 18px 14px 90px; }
+          h1 { font-size: 22px; text-align: center; margin-bottom: 20px; font-weight: 800; background: linear-gradient(135deg, #fff, #b0b0d0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+          .url-box { display: flex; gap: 8px; margin-bottom: 16px; }
+          .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: #1a1a35; border: 1px solid #2a2a4a; color: #fff; font-size: 14px; outline: none; font-family: inherit; -webkit-user-select: text; user-select: text; }
+          .url-box input::placeholder { color: #7a7a9a; }
+          .preview { background: linear-gradient(135deg, #1a1a3a, #2a1a5e); border-radius: 16px; padding: 12px; display: flex; gap: 12px; margin-bottom: 18px; border: 1px solid #2a2a4a; }
+          .preview img { width: 120px; height: 80px; border-radius: 10px; object-fit: cover; background: #000; }
+          .preview .info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+          .preview .title { font-size: 14px; font-weight: 700; margin-bottom: 6px; line-height: 1.4; }
+          .preview .duration { font-size: 12px; color: #9a9aba; font-weight: 600; }
+          .label { font-size: 13px; color: #b0b0d0; margin-bottom: 10px; font-weight: 700; }
+          .section { margin-bottom: 18px; }
+          .toggle-group { display: flex; gap: 8px; }
+          .toggle-group button { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid #2a2a4a; background: #1a1a35; color: #fff; font-size: 14px; cursor: pointer; font-weight: 700; font-family: inherit; }
+          .toggle-group button.active { background: linear-gradient(135deg, #ff9800, #ff6b00); border-color: #ff9800; box-shadow: 0 0 20px rgba(255,152,0,.4); }
+          .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+          .chips button { padding: 10px 18px; border-radius: 999px; border: 1px solid #3a3a5a; background: transparent; color: #cfcfe8; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600; }
+          .chips button.active { border-color: #ff9800; color: #fff; box-shadow: 0 0 12px rgba(255,152,0,.5); background: rgba(255,152,0,.08); }
+          .btn-download { width: 100%; padding: 16px; border: none; border-radius: 14px; background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 24px rgba(74,158,255,.4); margin-bottom: 18px; font-family: inherit; }
+          .btn-download:disabled { opacity: .5; }
+          .progress-card { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 14px; padding: 16px; }
+          .progress-card .top { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13px; gap: 10px; }
+          .progress-card .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .progress-card .pct { color: #4a9eff; font-weight: 800; }
+          .bar { height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden; }
+          .bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #ff9800); width: 0%; transition: width .3s; }
+          .footer { text-align: center; font-size: 11px; color: #6a6a8a; position: fixed; bottom: 20px; left: 0; right: 0; font-weight: 600; }
+          .status-msg { text-align: center; padding: 20px; font-size: 14px; color: #ff9800; font-weight: 700; }
+          </style>
+          </head>
+          <body>
+          <h1>تحميل الفيديوهات</h1>
+          <div id="status" class="status-msg">جاري تهيئة المحرك...</div>
+
+          <div id="main" style="display:none">
+          <div class="url-box">
+              <input id="url" type="text" placeholder="أدخل رابط فيديو يوتيوب...">
+          </div>
+
+          <div class="preview" id="preview" style="display:none">
+              <img id="thumb" src="">
+              <div class="info">
+                  <div class="title" id="vtitle">-</div>
+                  <div class="duration" id="vdur">-</div>
+              </div>
+          </div>
+
+          <div class="section">
+              <div class="label">الصيغة</div>
+              <div class="toggle-group">
+                  <button class="active" data-fmt="mp4" onclick="setFmt('mp4')">MP4 (فيديو)</button>
+                  <button data-fmt="mp3" onclick="setFmt('mp3')">MP3 (صوت)</button>
+              </div>
+          </div>
+
+          <div class="section" id="videoQSec">
+              <div class="label">الجودة</div>
+              <div class="chips" id="videoQ">
+                  <button data-q="1080" class="active">1080p</button>
+                  <button data-q="720">720p</button>
+                  <button data-q="480">480p</button>
+                  <button data-q="360">360p</button>
+              </div>
+          </div>
+
+          <div class="section" id="audioQSec" style="display:none">
+              <div class="label">جودة الصوت</div>
+              <div class="chips" id="audioQ">
+                  <button data-q="320" class="active">320kbps</button>
+                  <button data-q="192">192kbps</button>
+                  <button data-q="128">128kbps</button>
+              </div>
+          </div>
+
+          <button class="btn-download" id="dlBtn" onclick="startDownload()">تنزيل الآن</button>
+
+          <div class="progress-card" id="progCard" style="display:none">
+              <div class="top">
+                  <span class="name" id="pName">جاري التحميل...</span>
+                  <span class="pct" id="pPct">0%</span>
+              </div>
+              <div class="bar"><div class="bar-fill" id="pBar"></div></div>
+          </div>
+          </div>
+
+          <div class="footer">جميع الحقوق محفوظة لـ @JOKERICH</div>
+
+          <script>
+          var fmt = 'mp4', quality = '1080', pollTimer = null;
+
+          window.onYtdlpReady = function() {
+              document.getElementById('status').style.display = 'none';
+              document.getElementById('main').style.display = '';
+          };
+          window.onYtdlpError = function(msg) {
+              document.getElementById('status').textContent = 'خطأ: ' + msg;
+              document.getElementById('status').style.color = '#ff4d4d';
+          };
+
+          function setFmt(f) {
+              fmt = f;
+              document.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === f));
+              document.getElementById('videoQSec').style.display = f === 'mp4' ? '' : 'none';
+              document.getElementById('audioQSec').style.display = f === 'mp3' ? '' : 'none';
+              var active = document.querySelector('#videoQ button.active, #audioQ button.active');
+              if (active) quality = active.dataset.q;
+          }
+
+          document.querySelectorAll('#videoQ button, #audioQ button').forEach(b => {
+              b.onclick = () => {
+                  b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+                  b.classList.add('active');
+                  quality = b.dataset.q;
+              };
+          });
+
+          document.getElementById('url').addEventListener('blur', loadInfo);
+          document.getElementById('url').addEventListener('change', loadInfo);
+
+          function fmtTime(s) {
+              s = Math.floor(s);
+              var m = Math.floor(s/60), sec = s%60;
+              return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+          }
+
+          function loadInfo() {
+              var url = document.getElementById('url').value.trim();
+              if (!url) return;
+              setTimeout(function() {
+                  try {
+                      var res = Android.getVideoInfo(url);
+                      var d = JSON.parse(res);
+                      if (d.ok) {
+                          document.getElementById('preview').style.display = '';
+                          document.getElementById('thumb').src = d.thumbnail;
+                          document.getElementById('vtitle').textContent = d.title;
+                          document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
+                      }
+                  } catch(e) {}
+              }, 100);
+          }
+
+          function startDownload() {
+              var url = document.getElementById('url').value.trim();
+              if (!url) { alert('الرجاء إدخال رابط'); return; }
+              document.getElementById('dlBtn').disabled = true;
+              document.getElementById('progCard').style.display = '';
+              document.getElementById('pName').textContent = 'جاري التحميل...';
+              document.getElementById('pPct').textContent = '0%';
+              document.getElementById('pBar').style.width = '0%';
+
+              try {
+                  var taskId = Android.startDownload(url, fmt, quality, false, 0, 0);
+                  poll(taskId);
+              } catch(e) {
+                  document.getElementById('pName').textContent = 'خطأ: ' + e.message;
+                  document.getElementById('dlBtn').disabled = false;
+              }
+          }
+
+          function poll(id) {
+              if (pollTimer) clearInterval(pollTimer);
+              pollTimer = setInterval(function() {
+                  try {
+                      var d = JSON.parse(Android.getProgress(id));
+                      var pct = Math.round(d.percent || 0);
+                      document.getElementById('pPct').textContent = pct + '%';
+                      document.getElementById('pBar').style.width = pct + '%';
+
+                      if (d.status === 'downloading') {
+                          document.getElementById('pName').textContent = 'جاري التحميل...';
+                      } else if (d.status === 'done') {
+                          document.getElementById('pName').textContent = '✅ تم: ' + d.filename;
+                          document.getElementById('pPct').textContent = '100%';
+                          document.getElementById('pBar').style.width = '100%';
+                          document.getElementById('dlBtn').disabled = false;
+                          clearInterval(pollTimer);
+                      } else if (d.status === 'error') {
+                          document.getElementById('pName').textContent = '❌ ' + (d.error || 'خطأ');
+                          document.getElementById('dlBtn').disabled = false;
+                          clearInterval(pollTimer);
+                      }
+                  } catch(e) {}
+              }, 800);
+          }
+          </script>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JokerDownloader-APK
+          path: app/build/outputs/apk/debug/app-debug.apk              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url 'https://jitpack.io' }
+              }
+          }
+          rootProject.name = "JokerDownloader"
+          include ':app'
+          EOF
+          cat > build.gradle << 'EOF'
+          plugins {
+              id 'com.android.application' version '8.2.0' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
+          }
+          EOF
+          cat > gradle.properties << 'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+          cat > app/build.gradle << 'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.jokerich.downloader'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.jokerich.downloader"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = '17' }
+              packagingOptions {
+                  jniLibs {
+                      useLegacyPackaging = true
+                  }
+              }
+          }
+          dependencies {
+              implementation 'com.github.yausername.youtubedl-android:library:0.15.0'
+              implementation 'com.github.yausername.youtubedl-android:ffmpeg:0.15.0'
+              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application android:label="JokerDownloader"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
                   android:extractNativeLibs="true">
                   <activity android:name=".MainActivity" android:exported="true"
