@@ -28,6 +28,14 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/jokerich/downloader
           mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cat > settings.gradle << 'EOF'
           pluginManagement {
               repositories {
@@ -99,6 +107,8 @@ jobs:
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <application android:label="JokerDownloader"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
                   android:usesCleartextTraffic="true"
                   android:hardwareAccelerated="true"
                   android:extractNativeLibs="true"
@@ -119,6 +129,7 @@ jobs:
           package com.jokerich.downloader
 
           import android.app.Activity
+          import android.content.ClipboardManager
           import android.content.ContentValues
           import android.content.Context
           import android.os.Build
@@ -257,6 +268,19 @@ jobs:
 
               inner class Bridge {
                   @JavascriptInterface
+                  fun pasteFromClipboard(): String {
+                      return try {
+                          val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                          val clip = clipboard.primaryClip
+                          if (clip != null && clip.itemCount > 0) {
+                              clip.getItemAt(0).text?.toString() ?: ""
+                          } else ""
+                      } catch (e: Throwable) {
+                          ""
+                      }
+                  }
+
+                  @JavascriptInterface
                   fun startGetInfo(url: String): String {
                       val infoId = UUID.randomUUID().toString()
                       infoTasks[infoId] = InfoTask()
@@ -367,12 +391,6 @@ jobs:
                       val prefs = getSharedPreferences("history", Context.MODE_PRIVATE)
                       return prefs.getString("items", "[]") ?: "[]"
                   }
-
-                  @JavascriptInterface
-                  fun clearHistory() {
-                      val prefs = getSharedPreferences("history", Context.MODE_PRIVATE)
-                      prefs.edit().putString("items", "[]").apply()
-                  }
               }
 
               override fun onDestroy() {
@@ -383,123 +401,179 @@ jobs:
           EOF
           cat > app/src/main/assets/index.html << 'HTMLEOF'
           <!DOCTYPE html>
-          <html lang="ar" dir="rtl">
+          <html lang="ar" dir="rtl" id="htmlRoot">
           <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
           <title>JokerDownloader</title>
-          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Reem+Kufi:wght@400;600;700&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
+          :root {
+            --bg-1: #2a1a5e;
+            --bg-2: #0b0b1f;
+            --bg-3: #000;
+            --card-bg: #1a1a35;
+            --card-border: #2a2a4a;
+            --inner-bg: #0f0f24;
+            --btn-bg: #1a1a35;
+            --btn-border: #2a2a4a;
+            --btn-hover: #2a2a4a;
+            --text-primary: #fff;
+            --text-secondary: #b0b0d0;
+            --text-muted: #7a7a9a;
+            --text-footer: #6a6a8a;
+            --navbar-bg: rgba(26,26,53,.85);
+            --progress-bar-bg: #2a2a4a;
+            --title-gradient-1: #fff;
+            --title-gradient-2: #b0b0d0;
+            --font-ar: 'Tajawal', sans-serif;
+            --font-en: 'Poppins', sans-serif;
+          }
+          body.light {
+            --bg-1: #e8e3ff;
+            --bg-2: #f5f3ff;
+            --bg-3: #ffffff;
+            --card-bg: #ffffff;
+            --card-border: #e0dff0;
+            --inner-bg: #f5f3ff;
+            --btn-bg: #ffffff;
+            --btn-border: #e0dff0;
+            --btn-hover: #f0eeff;
+            --text-primary: #1a1a35;
+            --text-secondary: #4a4a6a;
+            --text-muted: #8a8aa8;
+            --text-footer: #8a8aa8;
+            --navbar-bg: rgba(255,255,255,.9);
+            --progress-bar-bg: #e0dff0;
+            --title-gradient-1: #2a1a5e;
+            --title-gradient-2: #4a4a6a;
+          }
           * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
           html, body { min-height: 100vh; }
-          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); background-attachment: fixed; color: #fff; padding: 0 14px; font-weight: 400; display: flex; flex-direction: column; }
+          body { font-family: var(--font-ar); background: radial-gradient(circle at 20% 0%, var(--bg-1) 0%, var(--bg-2) 55%, var(--bg-3) 100%); background-attachment: fixed; color: var(--text-primary); padding: 0 14px; font-weight: 400; display: flex; flex-direction: column; transition: background .3s, color .3s; }
+          body[dir="ltr"] { font-family: var(--font-en); }
 
-          #splash { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 40%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .8s ease, visibility .8s; }
+          #splash { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 40%, var(--bg-1) 0%, var(--bg-2) 55%, var(--bg-3) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .8s ease, visibility .8s; }
           #splash.hide { opacity: 0; visibility: hidden; }
-          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: glow 2s ease-in-out infinite alternate; margin-bottom: 14px; text-align: center; line-height: 1.2; padding: 0 20px; }
+          .splash-logo { font-family: var(--font-en); font-size: 28px; font-weight: 700; letter-spacing: -0.5px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: glow 2s ease-in-out infinite alternate; margin-bottom: 14px; text-align: center; line-height: 1.2; padding: 0 20px; }
           @keyframes glow { from { filter: drop-shadow(0 0 8px rgba(255,152,0,.4)); } to { filter: drop-shadow(0 0 24px rgba(74,158,255,.6)); } }
-          .splash-sub { font-family: 'Cairo', sans-serif; font-size: 12px; color: #b0b0d0; font-weight: 600; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; padding: 0 20px; }
+          .splash-sub { font-family: var(--font-ar); font-size: 12px; color: var(--text-secondary); font-weight: 500; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; padding: 0 20px; }
           .splash-sub span { color: #ff9800; font-weight: 800; }
           @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: .9; transform: translateY(0); } }
-          .splash-loader { margin-top: 30px; width: 50px; height: 3px; background: #2a2a4a; border-radius: 3px; overflow: hidden; }
+          .splash-loader { margin-top: 30px; width: 50px; height: 3px; background: var(--card-border); border-radius: 3px; overflow: hidden; }
           .splash-loader::after { content: ''; display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #ff9800, #4a9eff); border-radius: 3px; animation: load 1.6s ease-in-out infinite; }
           @keyframes load { 0% { transform: translateX(150%); } 100% { transform: translateX(-250%); } }
 
-          .navbar { display: flex; gap: 6px; background: rgba(26,26,53,.85); border: 1px solid #2a2a4a; border-radius: 14px; padding: 6px; margin: 14px 0 20px; flex-shrink: 0; }
-          .nav-btn { flex: 1; padding: 12px; background: transparent; border: none; color: #b0b0d0; font-family: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; cursor: pointer; }
+          .topbar { display: flex; gap: 6px; margin: 14px 0 10px; flex-shrink: 0; }
+          .toggle-btn { flex: 1; padding: 10px; background: var(--btn-bg); border: 1px solid var(--btn-border); color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 700; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+          .toggle-btn:active { background: var(--btn-hover); }
+          .toggle-btn .icon { font-size: 15px; }
+
+          .navbar { display: flex; gap: 6px; background: var(--navbar-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 6px; margin: 0 0 20px; flex-shrink: 0; }
+          .nav-btn { flex: 1; padding: 12px; background: transparent; border: none; color: var(--text-secondary); font-family: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; cursor: pointer; }
           .nav-btn.active { background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; box-shadow: 0 4px 14px rgba(74,158,255,.35); }
 
           .page { display: none; }
           .page.active { display: block; }
 
-          h1 { font-size: 22px; text-align: center; margin-bottom: 20px; font-weight: 800; background: linear-gradient(135deg, #fff, #b0b0d0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+          h1 { font-size: 22px; text-align: center; margin-bottom: 20px; font-weight: 800; background: linear-gradient(135deg, var(--title-gradient-1), var(--title-gradient-2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
           .url-box { display: flex; gap: 8px; margin-bottom: 16px; }
-          .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: #1a1a35; border: 1px solid #2a2a4a; color: #fff; font-size: 14px; outline: none; font-family: inherit; }
-          .url-box input::placeholder { color: #7a7a9a; }
-          .preview { background: linear-gradient(135deg, #1a1a3a, #2a1a5e); border-radius: 16px; padding: 12px; display: flex; gap: 12px; margin-bottom: 18px; border: 1px solid #2a2a4a; }
+          .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: var(--btn-bg); border: 1px solid var(--btn-border); color: var(--text-primary); font-size: 14px; outline: none; font-family: inherit; min-width: 0; }
+          .url-box input::placeholder { color: var(--text-muted); }
+          .btn-paste { background: var(--btn-bg); border: 1px solid var(--btn-border); color: var(--text-primary); padding: 0 18px; border-radius: 14px; font-size: 14px; cursor: pointer; font-weight: 700; font-family: inherit; flex-shrink: 0; }
+          .btn-paste:active { background: var(--btn-hover); }
+          .preview { background: linear-gradient(135deg, var(--card-bg), var(--bg-1)); border-radius: 16px; padding: 12px; display: flex; gap: 12px; margin-bottom: 18px; border: 1px solid var(--card-border); }
           .preview img { width: 120px; height: 80px; border-radius: 10px; object-fit: cover; background: #000; }
           .preview .info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-          .preview .title { font-size: 14px; font-weight: 700; margin-bottom: 6px; line-height: 1.4; }
-          .preview .duration { font-size: 12px; color: #9a9aba; font-weight: 600; }
-          .label { font-size: 13px; color: #b0b0d0; margin-bottom: 10px; font-weight: 700; }
+          .preview .title { font-size: 14px; font-weight: 700; margin-bottom: 6px; line-height: 1.4; color: var(--text-primary); }
+          .preview .duration { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+          .label { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 700; }
           .section { margin-bottom: 18px; }
           .toggle-group { display: flex; gap: 8px; }
-          .toggle-group button { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid #2a2a4a; background: #1a1a35; color: #fff; font-size: 14px; cursor: pointer; font-weight: 700; font-family: inherit; }
-          .toggle-group button.active { background: linear-gradient(135deg, #ff9800, #ff6b00); border-color: #ff9800; box-shadow: 0 0 20px rgba(255,152,0,.4); }
+          .toggle-group button { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text-primary); font-size: 14px; cursor: pointer; font-weight: 700; font-family: inherit; }
+          .toggle-group button.active { background: linear-gradient(135deg, #ff9800, #ff6b00); border-color: #ff9800; color: #fff; box-shadow: 0 0 20px rgba(255,152,0,.4); }
           .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-          .chips button { padding: 10px 18px; border-radius: 999px; border: 1px solid #3a3a5a; background: transparent; color: #cfcfe8; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600; }
-          .chips button.active { border-color: #ff9800; color: #fff; box-shadow: 0 0 12px rgba(255,152,0,.5); background: rgba(255,152,0,.08); }
+          .chips button { padding: 10px 18px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600; }
+          .chips button.active { border-color: #ff9800; color: var(--text-primary); box-shadow: 0 0 12px rgba(255,152,0,.5); background: rgba(255,152,0,.08); }
           .trim-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-          .switch { width: 48px; height: 26px; background: #2a2a4a; border-radius: 999px; position: relative; cursor: pointer; transition: .2s; flex-shrink: 0; }
+          .switch { width: 48px; height: 26px; background: var(--progress-bar-bg); border-radius: 999px; position: relative; cursor: pointer; transition: .2s; flex-shrink: 0; }
           .switch.on { background: #ff9800; }
           .switch::after { content: ''; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
           .switch.on::after { right: 25px; }
-          .trim-container { background: #1a1a35; padding: 16px; border-radius: 12px; border: 1px solid #2a2a4a; opacity: 0.4; pointer-events: none; }
+          .trim-container { background: var(--card-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--card-border); opacity: 0.4; pointer-events: none; }
           .trim-container.active { opacity: 1; pointer-events: auto; }
           .time-inputs { display: flex; gap: 10px; }
           .time-field { flex: 1; }
-          .time-field label { display: block; font-size: 11px; color: #9a9aba; margin-bottom: 6px; font-weight: 600; }
-          .time-field input { width: 100%; padding: 12px; background: #0f0f24; border: 1px solid #2a2a4a; color: #fff; border-radius: 10px; font-family: 'Cairo', monospace; font-size: 16px; text-align: center; font-weight: 700; outline: none; letter-spacing: 2px; }
+          .time-field label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600; }
+          .time-field input { width: 100%; padding: 12px; background: var(--inner-bg); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 10px; font-family: var(--font-en); font-size: 16px; text-align: center; font-weight: 700; outline: none; letter-spacing: 2px; }
           .time-field input:focus { border-color: #4a9eff; }
           .trim-info { margin-top: 12px; font-size: 12px; color: #4a9eff; font-weight: 700; text-align: center; background: rgba(74,158,255,.08); padding: 8px; border-radius: 8px; border: 1px dashed rgba(74,158,255,.3); }
           .btn-download { width: 100%; padding: 16px; border: none; border-radius: 14px; background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 24px rgba(74,158,255,.4); margin-bottom: 18px; font-family: inherit; }
           .btn-download:disabled { opacity: .5; }
-          .progress-card { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 14px; padding: 16px; }
+          .progress-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 16px; }
           .progress-card .top { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13px; gap: 10px; }
-          .progress-card .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .progress-card .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
           .progress-card .pct { color: #4a9eff; font-weight: 800; }
-          .bar { height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden; }
+          .bar { height: 8px; background: var(--progress-bar-bg); border-radius: 4px; overflow: hidden; }
           .bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #ff9800); width: 0%; transition: width .3s; }
           .status-msg { text-align: center; padding: 20px; font-size: 14px; color: #ff9800; font-weight: 700; }
-          .loading-mini { display: inline-block; width: 14px; height: 14px; border: 2px solid #2a2a4a; border-top-color: #4a9eff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-left: 8px; }
+          .loading-mini { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--card-border); border-top-color: #4a9eff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-left: 8px; }
           @keyframes spin { to { transform: rotate(360deg); } }
 
-          .history-item { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-          .history-item .h-title { flex: 1; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .history-item .h-meta { font-size: 11px; color: #9a9aba; margin-top: 4px; font-weight: 600; }
+          .history-item { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+          .history-item .h-title { flex: 1; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+          .history-item .h-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-weight: 600; }
           .history-item .h-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: rgba(255,152,0,.15); color: #ff9800; border: 1px solid rgba(255,152,0,.3); flex-shrink: 0; }
-          .empty { text-align: center; color: #6a6a8a; padding: 40px 20px; font-size: 14px; font-weight: 600; }
+          .empty { text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 14px; font-weight: 600; }
 
           .main-content { flex: 1; padding-bottom: 20px; }
-          .footer { text-align: center; font-size: 11px; color: #6a6a8a; padding: 20px 0 30px; font-weight: 600; margin-top: auto; }
+          .footer { text-align: center; font-size: 11px; color: var(--text-footer); padding: 20px 0 30px; font-weight: 600; margin-top: auto; }
           </style>
           </head>
           <body>
 
           <div id="splash">
           <div class="splash-logo">JokerDownloader</div>
-          <div class="splash-sub">تم صنع هذا البرنامج بواسطة <span>جوكريتش - Jokerich</span></div>
+          <div class="splash-sub" id="splashSub">تم صنع هذا البرنامج بواسطة <span>جوكريتش - Jokerich</span></div>
           <div class="splash-loader"></div>
           </div>
 
+          <div class="topbar" id="topbar" style="display:none">
+          <button class="toggle-btn" onclick="toggleLang()"><span class="icon">🌐</span><span id="langBtnText">English</span></button>
+          <button class="toggle-btn" onclick="toggleTheme()"><span class="icon" id="themeIcon">☀️</span><span id="themeBtnText">نهاري</span></button>
+          </div>
+
           <div class="navbar" id="navbar" style="display:none">
-          <button class="nav-btn active" onclick="showPage('home', this)">الصفحة الرئيسية</button>
-          <button class="nav-btn" onclick="showPage('downloads', this)">التنزيلات</button>
+          <button class="nav-btn active" onclick="showPage('home', this)" id="navHome">الصفحة الرئيسية</button>
+          <button class="nav-btn" onclick="showPage('downloads', this)" id="navDownloads">التنزيلات</button>
           </div>
 
           <div class="main-content">
           <div class="page active" id="page-home">
-          <h1>تحميل الفيديوهات</h1>
+          <h1 id="titleHome">تحميل الفيديوهات</h1>
           <div id="status" class="status-msg" style="display:none"></div>
           <div id="main">
-          <div class="url-box"><input id="url" type="text" placeholder="أدخل رابط فيديو يوتيوب..."></div>
+          <div class="url-box">
+          <input id="url" type="text" placeholder="أدخل رابط فيديو يوتيوب..." data-i18n-ph="urlPh">
+          <button class="btn-paste" id="pasteBtn" onclick="pasteUrl()">لصق</button>
+          </div>
           <div class="preview" id="preview" style="display:none">
           <img id="thumb" src="">
           <div class="info"><div class="title" id="vtitle">-</div><div class="duration" id="vdur">-</div></div>
           </div>
-          <div class="section"><div class="label">الصيغة</div>
+          <div class="section"><div class="label" id="labelFormat">الصيغة</div>
           <div class="toggle-group">
-          <button class="active" data-fmt="mp4" onclick="setFmt('mp4')">MP4 (فيديو)</button>
-          <button data-fmt="mp3" onclick="setFmt('mp3')">MP3 (صوت)</button>
+          <button class="active" data-fmt="mp4" onclick="setFmt('mp4')" id="btnMp4">MP4 (فيديو)</button>
+          <button data-fmt="mp3" onclick="setFmt('mp3')" id="btnMp3">MP3 (صوت)</button>
           </div></div>
-          <div class="section" id="videoQSec"><div class="label">الجودة</div>
+          <div class="section" id="videoQSec"><div class="label" id="labelQuality">الجودة</div>
           <div class="chips" id="videoQ">
           <button data-q="1080" class="active">1080p</button>
           <button data-q="720">720p</button>
           <button data-q="480">480p</button>
           <button data-q="360">360p</button>
           </div></div>
-          <div class="section" id="audioQSec" style="display:none"><div class="label">جودة الصوت</div>
+          <div class="section" id="audioQSec" style="display:none"><div class="label" id="labelAudioQuality">جودة الصوت</div>
           <div class="chips" id="audioQ">
           <button data-q="320" class="active">320kbps</button>
           <button data-q="192">192kbps</button>
@@ -507,13 +581,13 @@ jobs:
           </div></div>
           <div class="section">
           <div class="trim-row">
-          <div class="label" style="margin:0">تنزيل جزء مخصص</div>
+          <div class="label" style="margin:0" id="labelTrim">تنزيل جزء مخصص</div>
           <div class="switch" id="trimSwitch" onclick="toggleTrim()"></div>
           </div>
           <div class="trim-container" id="trimBox">
           <div class="time-inputs">
-          <div class="time-field"><label>وقت البداية</label><input type="text" id="startTime" value="00:00" oninput="updateTrimInfo()"></div>
-          <div class="time-field"><label>وقت النهاية</label><input type="text" id="endTime" value="00:00" oninput="updateTrimInfo()"></div>
+          <div class="time-field"><label id="labelStart">وقت البداية</label><input type="text" id="startTime" value="00:00" oninput="updateTrimInfo()"></div>
+          <div class="time-field"><label id="labelEnd">وقت النهاية</label><input type="text" id="endTime" value="00:00" oninput="updateTrimInfo()"></div>
           </div>
           <div class="trim-info" id="trimInfo">اكتب الوقت بصيغة MM:SS أو HH:MM:SS</div>
           </div>
@@ -527,196 +601,339 @@ jobs:
           </div>
 
           <div class="page" id="page-downloads">
-          <h1>التنزيلات</h1>
-          <div id="historyList"><div class="empty">لسه مفيش تنزيلات</div></div>
+          <h1 id="titleDownloads">التنزيلات</h1>
+          <div id="historyList"><div class="empty" id="emptyHistory">لسه مفيش تنزيلات</div></div>
           </div>
           </div>
 
-          <div class="footer">جميع الحقوق محفوظة لـ @JOKERICH</div>
+          <div class="footer" id="footerText">جميع الحقوق محفوظة لـ @JOKERICH</div>
 
           <script>
           var fmt = 'mp4', quality = '1080', trim = false, pollTimer = null, infoPollTimer = null, videoDuration = 0;
+          var lang = 'ar';
+          var theme = 'dark';
+
+          var translations = {
+            ar: {
+              splashSub: 'تم صنع هذا البرنامج بواسطة <span>جوكريتش - Jokerich</span>',
+              langBtnText: 'English',
+              themeIcon: '☀️',
+              themeBtnText: 'نهاري',
+              navHome: 'الصفحة الرئيسية',
+              navDownloads: 'التنزيلات',
+              titleHome: 'تحميل الفيديوهات',
+              titleDownloads: 'التنزيلات',
+              urlPh: 'أدخل رابط فيديو يوتيوب...',
+              pasteBtn: 'لصق',
+              labelFormat: 'الصيغة',
+              btnMp4: 'MP4 (فيديو)',
+              btnMp3: 'MP3 (صوت)',
+              labelQuality: 'الجودة',
+              labelAudioQuality: 'جودة الصوت',
+              labelTrim: 'تنزيل جزء مخصص',
+              labelStart: 'وقت البداية',
+              labelEnd: 'وقت النهاية',
+              trimInfoDefault: 'اكتب الوقت بصيغة MM:SS أو HH:MM:SS',
+              trimInfoInvalid: '❌ صيغة الوقت غير صحيحة',
+              trimInfoOrder: '⚠️ وقت النهاية لازم يكون بعد البداية',
+              trimInfoOk: '✅ هينزل من {S} إلى {E} — المدة: {D}',
+              dlBtn: 'تنزيل الآن',
+              pNameLoading: 'جاري التحميل...',
+              pNameDone: '✅ تم: ',
+              pNameError: '❌ ',
+              emptyHistory: 'لسه مفيش تنزيلات',
+              footer: 'جميع الحقوق محفوظة لـ @JOKERICH',
+              loadingInfo: 'جاري جلب المعلومات...',
+              alertNoUrl: 'الرجاء إدخال رابط',
+              alertTimeFormat: 'صيغة الوقت غير صحيحة',
+              alertTimeOrder: 'وقت النهاية لازم يكون بعد البداية',
+              errorPrefix: 'خطأ: ',
+              defaultError: 'خطأ'
+            },
+            en: {
+              splashSub: 'Made by <span>Jokerich</span>',
+              langBtnText: 'عربي',
+              themeIcon: '☀️',
+              themeBtnText: 'Light',
+              navHome: 'Home',
+              navDownloads: 'Downloads',
+              titleHome: 'Video Downloader',
+              titleDownloads: 'Downloads',
+              urlPh: 'Enter YouTube video URL...',
+              pasteBtn: 'Paste',
+              labelFormat: 'Format',
+              btnMp4: 'MP4 (Video)',
+              btnMp3: 'MP3 (Audio)',
+              labelQuality: 'Quality',
+              labelAudioQuality: 'Audio Quality',
+              labelTrim: 'Download Custom Part',
+              labelStart: 'Start Time',
+              labelEnd: 'End Time',
+              trimInfoDefault: 'Enter time as MM:SS or HH:MM:SS',
+              trimInfoInvalid: '❌ Invalid time format',
+              trimInfoOrder: '⚠️ End time must be after start',
+              trimInfoOk: '✅ From {S} to {E} — Duration: {D}',
+              dlBtn: 'Download Now',
+              pNameLoading: 'Downloading...',
+              pNameDone: '✅ Done: ',
+              pNameError: '❌ ',
+              emptyHistory: 'No downloads yet',
+              footer: 'All rights reserved to @JOKERICH',
+              loadingInfo: 'Loading info...',
+              alertNoUrl: 'Please enter a URL',
+              alertTimeFormat: 'Invalid time format',
+              alertTimeOrder: 'End time must be after start',
+              errorPrefix: 'Error: ',
+              defaultError: 'Error'
+            }
+          };
+
+          function t(key) { return translations[lang][key]; }
+
+          function applyLang() {
+            var tr = translations[lang];
+            document.getElementById('htmlRoot').setAttribute('lang', lang);
+            document.getElementById('htmlRoot').setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+            document.body.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+            document.getElementById('splashSub').innerHTML = tr.splashSub;
+            document.getElementById('langBtnText').textContent = tr.langBtnText;
+            document.getElementById('navHome').textContent = tr.navHome;
+            document.getElementById('navDownloads').textContent = tr.navDownloads;
+            document.getElementById('titleHome').textContent = tr.titleHome;
+            document.getElementById('titleDownloads').textContent = tr.titleDownloads;
+            document.getElementById('url').setAttribute('placeholder', tr.urlPh);
+            document.getElementById('pasteBtn').textContent = tr.pasteBtn;
+            document.getElementById('labelFormat').textContent = tr.labelFormat;
+            document.getElementById('btnMp4').textContent = tr.btnMp4;
+            document.getElementById('btnMp3').textContent = tr.btnMp3;
+            document.getElementById('labelQuality').textContent = tr.labelQuality;
+            document.getElementById('labelAudioQuality').textContent = tr.labelAudioQuality;
+            document.getElementById('labelTrim').textContent = tr.labelTrim;
+            document.getElementById('labelStart').textContent = tr.labelStart;
+            document.getElementById('labelEnd').textContent = tr.labelEnd;
+            document.getElementById('dlBtn').textContent = tr.dlBtn;
+            document.getElementById('footerText').textContent = tr.footer;
+            document.getElementById('themeBtnText').textContent = tr.themeBtnText;
+            updateTrimInfo();
+            if (document.getElementById('page-downloads').classList.contains('active')) loadHistory();
+            if (document.getElementById('historyList').innerHTML.indexOf('empty') > -1 || document.getElementById('historyList').innerHTML === '') {
+              document.getElementById('historyList').innerHTML = '<div class="empty">' + tr.emptyHistory + '</div>';
+            }
+          }
+
+          function toggleLang() {
+            lang = lang === 'ar' ? 'en' : 'ar';
+            applyLang();
+          }
+
+          function applyTheme() {
+            if (theme === 'light') {
+              document.body.classList.add('light');
+              document.getElementById('themeIcon').textContent = '🌙';
+              document.getElementById('themeBtnText').textContent = lang === 'ar' ? 'ليلي' : 'Dark';
+            } else {
+              document.body.classList.remove('light');
+              document.getElementById('themeIcon').textContent = '☀️';
+              document.getElementById('themeBtnText').textContent = lang === 'ar' ? 'نهاري' : 'Light';
+            }
+          }
+
+          function toggleTheme() {
+            theme = theme === 'dark' ? 'light' : 'dark';
+            applyTheme();
+          }
 
           setTimeout(function() {
-          document.getElementById('splash').classList.add('hide');
-          document.getElementById('navbar').style.display = '';
+            document.getElementById('splash').classList.add('hide');
+            document.getElementById('topbar').style.display = '';
+            document.getElementById('navbar').style.display = '';
           }, 5000);
 
           function showPage(name, btn) {
-          document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-          document.getElementById('page-' + name).classList.add('active');
-          document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          if (name === 'downloads') loadHistory();
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + name).classList.add('active');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (name === 'downloads') loadHistory();
+          }
+
+          function pasteUrl() {
+            try {
+              var txt = Android.pasteFromClipboard();
+              if (txt && txt.length > 0) {
+                document.getElementById('url').value = txt;
+                loadInfo();
+              }
+            } catch(e) {}
           }
 
           function parseTime(str) {
-          str = (str || '').trim();
-          if (!str) return 0;
-          var parts = str.split(':').map(x => x.trim()).filter(x => x !== '');
-          for (var i = 0; i < parts.length; i++) { if (isNaN(+parts[i])) return -1; }
-          if (parts.length === 2) return (+parts[0]) * 60 + (+parts[1]);
-          if (parts.length === 3) return (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parts[2]);
-          if (parts.length === 1) return +parts[0];
-          return -1;
+            str = (str || '').trim();
+            if (!str) return 0;
+            var parts = str.split(':').map(x => x.trim()).filter(x => x !== '');
+            for (var i = 0; i < parts.length; i++) { if (isNaN(+parts[i])) return -1; }
+            if (parts.length === 2) return (+parts[0]) * 60 + (+parts[1]);
+            if (parts.length === 3) return (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parts[2]);
+            if (parts.length === 1) return +parts[0];
+            return -1;
           }
 
           function fmtTime(s) {
-          s = Math.floor(s);
-          var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
-          if (h > 0) return h + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
-          return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+            s = Math.floor(s);
+            var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+            if (h > 0) return h + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+            return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
           }
 
           function updateTrimInfo() {
-          var s = parseTime(document.getElementById('startTime').value);
-          var e = parseTime(document.getElementById('endTime').value);
-          var info = document.getElementById('trimInfo');
-          if (s < 0 || e < 0) { info.textContent = '❌ صيغة الوقت غير صحيحة'; return; }
-          if (e <= s) { info.textContent = '⚠️ وقت النهاية لازم يكون بعد البداية'; return; }
-          info.textContent = '✅ هينزل من ' + fmtTime(s) + ' إلى ' + fmtTime(e) + ' — المدة: ' + fmtTime(e - s);
+            var s = parseTime(document.getElementById('startTime').value);
+            var e = parseTime(document.getElementById('endTime').value);
+            var info = document.getElementById('trimInfo');
+            if (s < 0 || e < 0) { info.textContent = t('trimInfoInvalid'); return; }
+            if (e <= s) { info.textContent = t('trimInfoOrder'); return; }
+            info.textContent = t('trimInfoOk').replace('{S}', fmtTime(s)).replace('{E}', fmtTime(e)).replace('{D}', fmtTime(e - s));
           }
 
           window.onYtdlpReady = function() {
-          document.getElementById('status').style.display = 'none';
+            document.getElementById('status').style.display = 'none';
           };
           window.onYtdlpError = function(msg) {
-          document.getElementById('status').style.display = '';
-          document.getElementById('status').textContent = 'خطأ: ' + msg;
-          document.getElementById('status').style.color = '#ff4d4d';
+            document.getElementById('status').style.display = '';
+            document.getElementById('status').textContent = t('errorPrefix') + msg;
+            document.getElementById('status').style.color = '#ff4d4d';
           };
 
           function setFmt(f) {
-          fmt = f;
-          document.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === f));
-          document.getElementById('videoQSec').style.display = f === 'mp4' ? '' : 'none';
-          document.getElementById('audioQSec').style.display = f === 'mp3' ? '' : 'none';
-          var active = document.querySelector('#videoQ button.active, #audioQ button.active');
-          if (active) quality = active.dataset.q;
+            fmt = f;
+            document.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === f));
+            document.getElementById('videoQSec').style.display = f === 'mp4' ? '' : 'none';
+            document.getElementById('audioQSec').style.display = f === 'mp3' ? '' : 'none';
+            var active = document.querySelector('#videoQ button.active, #audioQ button.active');
+            if (active) quality = active.dataset.q;
           }
 
           document.querySelectorAll('#videoQ button, #audioQ button').forEach(b => {
-          b.onclick = () => {
-          b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active'));
-          b.classList.add('active');
-          quality = b.dataset.q;
-          };
+            b.onclick = () => {
+              b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+              b.classList.add('active');
+              quality = b.dataset.q;
+            };
           });
 
           function toggleTrim() {
-          trim = !trim;
-          document.getElementById('trimSwitch').classList.toggle('on', trim);
-          document.getElementById('trimBox').classList.toggle('active', trim);
-          if (trim && videoDuration > 0) {
-          document.getElementById('startTime').value = '00:00';
-          document.getElementById('endTime').value = fmtTime(videoDuration);
-          updateTrimInfo();
-          }
+            trim = !trim;
+            document.getElementById('trimSwitch').classList.toggle('on', trim);
+            document.getElementById('trimBox').classList.toggle('active', trim);
+            if (trim && videoDuration > 0) {
+              document.getElementById('startTime').value = '00:00';
+              document.getElementById('endTime').value = fmtTime(videoDuration);
+              updateTrimInfo();
+            }
           }
 
           document.getElementById('url').addEventListener('change', loadInfo);
           document.getElementById('url').addEventListener('blur', loadInfo);
 
           function loadInfo() {
-          var url = document.getElementById('url').value.trim();
-          if (!url) return;
-          if (infoPollTimer) { clearInterval(infoPollTimer); infoPollTimer = null; }
-          try {
-          var infoId = Android.startGetInfo(url);
-          document.getElementById('preview').style.display = '';
-          document.getElementById('vtitle').innerHTML = 'جاري جلب المعلومات...<span class="loading-mini"></span>';
-          document.getElementById('thumb').src = '';
-          document.getElementById('vdur').textContent = '';
-          infoPollTimer = setInterval(function() {
-          try {
-          var d = JSON.parse(Android.getInfoResult(infoId));
-          if (d.status === 'done') {
-          videoDuration = d.duration;
-          document.getElementById('thumb').src = d.thumbnail;
-          document.getElementById('vtitle').textContent = d.title;
-          document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
-          if (trim && d.duration > 0) {
-          document.getElementById('endTime').value = fmtTime(d.duration);
-          updateTrimInfo();
-          }
-          clearInterval(infoPollTimer);
-          infoPollTimer = null;
-          } else if (d.status === 'error') {
-          document.getElementById('preview').style.display = 'none';
-          clearInterval(infoPollTimer);
-          infoPollTimer = null;
-          }
-          } catch(e) {}
-          }, 700);
-          } catch(e) {}
+            var url = document.getElementById('url').value.trim();
+            if (!url) return;
+            if (infoPollTimer) { clearInterval(infoPollTimer); infoPollTimer = null; }
+            try {
+              var infoId = Android.startGetInfo(url);
+              document.getElementById('preview').style.display = '';
+              document.getElementById('vtitle').innerHTML = t('loadingInfo') + '<span class="loading-mini"></span>';
+              document.getElementById('thumb').src = '';
+              document.getElementById('vdur').textContent = '';
+              infoPollTimer = setInterval(function() {
+                try {
+                  var d = JSON.parse(Android.getInfoResult(infoId));
+                  if (d.status === 'done') {
+                    videoDuration = d.duration;
+                    document.getElementById('thumb').src = d.thumbnail;
+                    document.getElementById('vtitle').textContent = d.title;
+                    document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
+                    if (trim && d.duration > 0) {
+                      document.getElementById('endTime').value = fmtTime(d.duration);
+                      updateTrimInfo();
+                    }
+                    clearInterval(infoPollTimer);
+                    infoPollTimer = null;
+                  } else if (d.status === 'error') {
+                    document.getElementById('preview').style.display = 'none';
+                    clearInterval(infoPollTimer);
+                    infoPollTimer = null;
+                  }
+                } catch(e) {}
+              }, 700);
+            } catch(e) {}
           }
 
           function startDownload() {
-          var url = document.getElementById('url').value.trim();
-          if (!url) { alert('الرجاء إدخال رابط'); return; }
-          var start = 0, end = 0;
-          if (trim) {
-          start = parseTime(document.getElementById('startTime').value);
-          end = parseTime(document.getElementById('endTime').value);
-          if (start < 0 || end < 0) { alert('صيغة الوقت غير صحيحة'); return; }
-          if (end <= start) { alert('وقت النهاية لازم يكون بعد البداية'); return; }
-          }
-          document.getElementById('dlBtn').disabled = true;
-          document.getElementById('progCard').style.display = '';
-          document.getElementById('pName').textContent = 'جاري التحميل...';
-          document.getElementById('pPct').textContent = '0%';
-          document.getElementById('pBar').style.width = '0%';
-          try {
-          var taskId = Android.startDownload(url, fmt, quality, trim, start, end);
-          poll(taskId);
-          } catch(e) {
-          document.getElementById('pName').textContent = 'خطأ: ' + e.message;
-          document.getElementById('dlBtn').disabled = false;
-          }
+            var url = document.getElementById('url').value.trim();
+            if (!url) { alert(t('alertNoUrl')); return; }
+            var start = 0, end = 0;
+            if (trim) {
+              start = parseTime(document.getElementById('startTime').value);
+              end = parseTime(document.getElementById('endTime').value);
+              if (start < 0 || end < 0) { alert(t('alertTimeFormat')); return; }
+              if (end <= start) { alert(t('alertTimeOrder')); return; }
+            }
+            document.getElementById('dlBtn').disabled = true;
+            document.getElementById('progCard').style.display = '';
+            document.getElementById('pName').textContent = t('pNameLoading');
+            document.getElementById('pPct').textContent = '0%';
+            document.getElementById('pBar').style.width = '0%';
+            try {
+              var taskId = Android.startDownload(url, fmt, quality, trim, start, end);
+              poll(taskId);
+            } catch(e) {
+              document.getElementById('pName').textContent = t('errorPrefix') + e.message;
+              document.getElementById('dlBtn').disabled = false;
+            }
           }
 
           function poll(id) {
-          if (pollTimer) clearInterval(pollTimer);
-          pollTimer = setInterval(function() {
-          try {
-          var d = JSON.parse(Android.getProgress(id));
-          var pct = Math.round(d.percent || 0);
-          document.getElementById('pPct').textContent = pct + '%';
-          document.getElementById('pBar').style.width = pct + '%';
-          if (d.status === 'downloading') {
-          document.getElementById('pName').textContent = 'جاري التحميل...';
-          } else if (d.status === 'done') {
-          document.getElementById('pName').textContent = '✅ تم: ' + d.filename;
-          document.getElementById('pPct').textContent = '100%';
-          document.getElementById('pBar').style.width = '100%';
-          document.getElementById('dlBtn').disabled = false;
-          clearInterval(pollTimer);
-          } else if (d.status === 'error') {
-          document.getElementById('pName').textContent = '❌ ' + (d.error || 'خطأ');
-          document.getElementById('dlBtn').disabled = false;
-          clearInterval(pollTimer);
-          }
-          } catch(e) {}
-          }, 800);
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(function() {
+              try {
+                var d = JSON.parse(Android.getProgress(id));
+                var pct = Math.round(d.percent || 0);
+                document.getElementById('pPct').textContent = pct + '%';
+                document.getElementById('pBar').style.width = pct + '%';
+                if (d.status === 'downloading') {
+                  document.getElementById('pName').textContent = t('pNameLoading');
+                } else if (d.status === 'done') {
+                  document.getElementById('pName').textContent = t('pNameDone') + d.filename;
+                  document.getElementById('pPct').textContent = '100%';
+                  document.getElementById('pBar').style.width = '100%';
+                  document.getElementById('dlBtn').disabled = false;
+                  clearInterval(pollTimer);
+                } else if (d.status === 'error') {
+                  document.getElementById('pName').textContent = t('pNameError') + (d.error || t('defaultError'));
+                  document.getElementById('dlBtn').disabled = false;
+                  clearInterval(pollTimer);
+                }
+              } catch(e) {}
+            }, 800);
           }
 
           function loadHistory() {
-          try {
-          var arr = JSON.parse(Android.getHistory());
-          var box = document.getElementById('historyList');
-          if (!arr.length) {
-          box.innerHTML = '<div class="empty">لسه مفيش تنزيلات</div>';
-          return;
-          }
-          var html = '';
-          for (var i = 0; i < arr.length; i++) {
-          var h = arr[i];
-          var q = h.format === 'MP3' ? h.quality + 'kbps' : h.quality + 'p';
-          var trimTag = h.trim ? ' • مقطع' : '';
-          html += '<div class="history-item"><div style="flex:1;min-width:0"><div class="h-title">' + h.title + '</div><div class="h-meta">' + h.date + ' • ' + q + trimTag + '</div></div><div class="h-badge">' + h.format + '</div></div>';
-          }
-          box.innerHTML = html;
-          } catch(e) {}
+            try {
+              var arr = JSON.parse(Android.getHistory());
+              var box = document.getElementById('historyList');
+              if (!arr.length) {
+                box.innerHTML = '<div class="empty">' + t('emptyHistory') + '</div>';
+                return;
+              }
+              var html = '';
+              for (var i = 0; i < arr.length; i++) {
+                var h = arr[i];
+                var q = h.format === 'MP3' ? h.quality + 'kbps' : h.quality + 'p';
+                var trimTag = h.trim ? (lang === 'ar' ? ' • مقطع' : ' • Trimmed') : '';
+                html += '<div class="history-item"><div style="flex:1;min-width:0"><div class="h-title">' + h.title + '</div><div class="h-meta">' + h.date + ' • ' + q + trimTag + '</div></div><div class="h-badge">' + h.format + '</div></div>';
+              }
+              box.innerHTML = html;
+            } catch(e) {}
           }
           </script>
           </body>
