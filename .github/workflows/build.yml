@@ -76,6 +76,11 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_17
               }
               kotlinOptions { jvmTarget = '17' }
+              packagingOptions {
+                  jniLibs {
+                      useLegacyPackaging = true
+                  }
+              }
           }
           dependencies {
               implementation 'com.github.yausername.youtubedl-android:library:0.15.0'
@@ -110,15 +115,18 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   val tv = TextView(this)
-                  tv.textSize = 20f
+                  tv.textSize = 16f
+                  tv.setPadding(30, 30, 30, 30)
                   tv.text = "جاري تهيئة yt-dlp..."
                   setContentView(tv)
                   thread {
                       try {
                           YoutubeDL.getInstance().init(applicationContext)
-                          runOnUiThread { tv.text = "yt-dlp جاهز! ✅" }
-                      } catch (e: Exception) {
-                          runOnUiThread { tv.text = "خطأ: " + (e.message ?: "unknown") }
+                          val version = YoutubeDL.getInstance().version(applicationContext)
+                          runOnUiThread { tv.text = "yt-dlp جاهز! ✅\nالإصدار: " + version }
+                      } catch (e: Throwable) {
+                          val msg = "خطأ: " + (e.message ?: "بدون رسالة") + "\nالنوع: " + e.javaClass.simpleName
+                          runOnUiThread { tv.text = msg }
                       }
                   }
               }
