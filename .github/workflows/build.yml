@@ -87,7 +87,9 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-              <application android:label="JokerDownloader" android:theme="@android:style/Theme.Material.NoActionBar">
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <application android:label="JokerDownloader" android:theme="@android:style/Theme.Material.NoActionBar"
+                  android:extractNativeLibs="true">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -114,13 +116,9 @@ jobs:
                   thread {
                       try {
                           YoutubeDL.getInstance().init(applicationContext)
-                          runOnUiThread {
-                              tv.text = "yt-dlp جاهز! ✅"
-                          }
+                          runOnUiThread { tv.text = "yt-dlp جاهز! ✅" }
                       } catch (e: Exception) {
-                          runOnUiThread {
-                              tv.text = "خطأ: " + (e.message ?: "unknown")
-                          }
+                          runOnUiThread { tv.text = "خطأ: " + (e.message ?: "unknown") }
                       }
                   }
               }
