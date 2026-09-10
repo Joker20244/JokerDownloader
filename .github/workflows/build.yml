@@ -84,8 +84,8 @@ jobs:
               }
           }
           dependencies {
-              implementation 'com.github.yausername.youtubedl-android:library:0.15.0'
-              implementation 'com.github.yausername.youtubedl-android:ffmpeg:0.15.0'
+              implementation 'com.github.yausername.youtubedl-android:library:0.17.4'
+              implementation 'com.github.yausername.youtubedl-android:ffmpeg:0.17.4'
               implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
           }
           EOF
@@ -223,7 +223,7 @@ jobs:
                                   request.addOption("--audio-format", "mp3")
                                   request.addOption("--audio-quality", quality + "k")
                               } else {
-                                  request.addOption("-f", "best[height<=" + quality + "]/bestvideo[height<=" + quality + "]+bestaudio/best")
+                                  request.addOption("-f", "bv*[height<=" + quality + "]+ba/b[height<=" + quality + "]/bv*+ba/b")
                                   request.addOption("--merge-output-format", "mp4")
                               }
                               tasks[taskId]?.status = "downloading"
