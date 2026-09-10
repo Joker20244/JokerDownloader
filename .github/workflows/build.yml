@@ -119,8 +119,12 @@ jobs:
           package com.jokerich.downloader
 
           import android.app.Activity
+          import android.content.ContentValues
+          import android.content.Context
+          import android.os.Build
           import android.os.Bundle
           import android.os.Environment
+          import android.provider.MediaStore
           import android.webkit.JavascriptInterface
           import android.webkit.WebView
           import android.webkit.WebViewClient
@@ -132,8 +136,12 @@ jobs:
           import kotlinx.coroutines.cancel
           import kotlinx.coroutines.launch
           import kotlinx.coroutines.withContext
+          import org.json.JSONArray
           import org.json.JSONObject
           import java.io.File
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
           import java.util.UUID
           import java.util.concurrent.ConcurrentHashMap
 
@@ -152,7 +160,7 @@ jobs:
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  downloadDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
+                  downloadDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
                   downloadDir.mkdirs()
 
                   webView = WebView(this)
@@ -185,6 +193,51 @@ jobs:
                               webView.evaluateJavascript("window.onYtdlpError && window.onYtdlpError('$msg')", null)
                           }
                       }
+                  }
+              }
+
+              private fun copyToPublicDownloads(source: File) {
+                  try {
+                      val mime = if (source.name.endsWith(".mp3")) "audio/mpeg" else "video/mp4"
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          val values = ContentValues().apply {
+                              put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
+                              put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                              put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/JokerDownloader")
+                          }
+                          val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                          uri?.let {
+                              contentResolver.openOutputStream(it)?.use { out ->
+                                  source.inputStream().use { inp -> inp.copyTo(out) }
+                              }
+                          }
+                      } else {
+                          val publicDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
+                          publicDir.mkdirs()
+                          val dest = File(publicDir, source.name)
+                          source.copyTo(dest, overwrite = true)
+                      }
+                  } catch (e: Throwable) {
+                  }
+              }
+
+              private fun addToHistory(filename: String, format: String, quality: String, trimmed: Boolean) {
+                  try {
+                      val prefs = getSharedPreferences("history", Context.MODE_PRIVATE)
+                      val existing = prefs.getString("items", "[]") ?: "[]"
+                      val arr = JSONArray(existing)
+                      val item = JSONObject().apply {
+                          put("title", filename)
+                          put("format", format.uppercase())
+                          put("quality", quality)
+                          put("trim", trimmed)
+                          put("date", SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()))
+                      }
+                      val newArr = JSONArray()
+                      newArr.put(item)
+                      for (i in 0 until arr.length()) newArr.put(arr.get(i))
+                      prefs.edit().putString("items", newArr.toString()).apply()
+                  } catch (e: Throwable) {
                   }
               }
 
@@ -236,14 +289,24 @@ jobs:
                                   request.addOption("-f", "bv*[height<=" + quality + "]+ba/b[height<=" + quality + "]/bv*+ba/b")
                                   request.addOption("--merge-output-format", "mp4")
                               }
+                              if (trim && end > start) {
+                                  request.addOption("--download-sections", "*" + start + "-" + end)
+                                  request.addOption("--force-keyframes-at-cuts")
+                              }
                               tasks[taskId]?.status = "downloading"
                               YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
                                   tasks[taskId]?.progress = progress
                               }
+                              val newest = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
+                              if (newest != null) {
+                                  copyToPublicDownloads(newest)
+                                  tasks[taskId]?.filename = newest.name
+                                  addToHistory(newest.name, format, quality, trim)
+                              } else {
+                                  tasks[taskId]?.filename = "تم التحميل"
+                              }
                               tasks[taskId]?.status = "done"
                               tasks[taskId]?.progress = 100f
-                              val newest = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
-                              tasks[taskId]?.filename = newest?.name ?: "تم التحميل"
                           } catch (e: Throwable) {
                               tasks[taskId]?.status = "error"
                               tasks[taskId]?.error = e.message ?: "unknown"
@@ -262,6 +325,18 @@ jobs:
                           put("error", t.error)
                       }.toString()
                   }
+
+                  @JavascriptInterface
+                  fun getHistory(): String {
+                      val prefs = getSharedPreferences("history", Context.MODE_PRIVATE)
+                      return prefs.getString("items", "[]") ?: "[]"
+                  }
+
+                  @JavascriptInterface
+                  fun clearHistory() {
+                      val prefs = getSharedPreferences("history", Context.MODE_PRIVATE)
+                      prefs.edit().putString("items", "[]").apply()
+                  }
               }
 
               override fun onDestroy() {
@@ -277,10 +352,29 @@ jobs:
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
           <title>JokerDownloader</title>
-          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Reem+Kufi:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
           * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); color: #fff; min-height: 100vh; padding: 18px 14px 90px; }
+          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); color: #fff; min-height: 100vh; padding: 0 14px 90px; font-weight: 400; }
+
+          #splash { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 40%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .8s ease, visibility .8s; }
+          #splash.hide { opacity: 0; visibility: hidden; }
+          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -1px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 40px rgba(255,152,0,.35); animation: glow 2s ease-in-out infinite alternate; margin-bottom: 20px; text-align: center; line-height: 1.2; padding: 0 20px; }
+          @keyframes glow { from { filter: drop-shadow(0 0 8px rgba(255,152,0,.4)); } to { filter: drop-shadow(0 0 24px rgba(74,158,255,.6)); } }
+          .splash-sub { font-family: 'Cairo', sans-serif; font-size: 14px; color: #b0b0d0; font-weight: 600; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; }
+          .splash-sub span { color: #ff9800; font-weight: 800; }
+          @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: .9; transform: translateY(0); } }
+          .splash-loader { margin-top: 40px; width: 60px; height: 3px; background: #2a2a4a; border-radius: 3px; overflow: hidden; }
+          .splash-loader::after { content: ''; display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #ff9800, #4a9eff); border-radius: 3px; animation: load 1.6s ease-in-out infinite; }
+          @keyframes load { 0% { transform: translateX(150%); } 100% { transform: translateX(-250%); } }
+
+          .navbar { display: flex; gap: 6px; background: rgba(26,26,53,.85); border: 1px solid #2a2a4a; border-radius: 14px; padding: 6px; margin: 14px 0 20px; }
+          .nav-btn { flex: 1; padding: 12px; background: transparent; border: none; color: #b0b0d0; font-family: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; cursor: pointer; }
+          .nav-btn.active { background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; box-shadow: 0 4px 14px rgba(74,158,255,.35); }
+
+          .page { display: none; }
+          .page.active { display: block; }
+
           h1 { font-size: 22px; text-align: center; margin-bottom: 20px; font-weight: 800; background: linear-gradient(135deg, #fff, #b0b0d0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
           .url-box { display: flex; gap: 8px; margin-bottom: 16px; }
           .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: #1a1a35; border: 1px solid #2a2a4a; color: #fff; font-size: 14px; outline: none; font-family: inherit; }
@@ -298,6 +392,19 @@ jobs:
           .chips { display: flex; gap: 8px; flex-wrap: wrap; }
           .chips button { padding: 10px 18px; border-radius: 999px; border: 1px solid #3a3a5a; background: transparent; color: #cfcfe8; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600; }
           .chips button.active { border-color: #ff9800; color: #fff; box-shadow: 0 0 12px rgba(255,152,0,.5); background: rgba(255,152,0,.08); }
+          .trim-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+          .switch { width: 48px; height: 26px; background: #2a2a4a; border-radius: 999px; position: relative; cursor: pointer; transition: .2s; flex-shrink: 0; }
+          .switch.on { background: #ff9800; }
+          .switch::after { content: ''; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+          .switch.on::after { right: 25px; }
+          .trim-container { background: #1a1a35; padding: 16px; border-radius: 12px; border: 1px solid #2a2a4a; opacity: 0.4; pointer-events: none; }
+          .trim-container.active { opacity: 1; pointer-events: auto; }
+          .time-inputs { display: flex; gap: 10px; }
+          .time-field { flex: 1; }
+          .time-field label { display: block; font-size: 11px; color: #9a9aba; margin-bottom: 6px; font-weight: 600; }
+          .time-field input { width: 100%; padding: 12px; background: #0f0f24; border: 1px solid #2a2a4a; color: #fff; border-radius: 10px; font-family: 'Cairo', monospace; font-size: 16px; text-align: center; font-weight: 700; outline: none; letter-spacing: 2px; }
+          .time-field input:focus { border-color: #4a9eff; }
+          .trim-info { margin-top: 12px; font-size: 12px; color: #4a9eff; font-weight: 700; text-align: center; background: rgba(74,158,255,.08); padding: 8px; border-radius: 8px; border: 1px dashed rgba(74,158,255,.3); }
           .btn-download { width: 100%; padding: 16px; border: none; border-radius: 14px; background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 24px rgba(74,158,255,.4); margin-bottom: 18px; font-family: inherit; }
           .btn-download:disabled { opacity: .5; }
           .progress-card { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 14px; padding: 16px; }
@@ -308,12 +415,31 @@ jobs:
           .bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #ff9800); width: 0%; transition: width .3s; }
           .footer { text-align: center; font-size: 11px; color: #6a6a8a; position: fixed; bottom: 20px; left: 0; right: 0; font-weight: 600; }
           .status-msg { text-align: center; padding: 20px; font-size: 14px; color: #ff9800; font-weight: 700; }
+
+          .history-item { background: #1a1a35; border: 1px solid #2a2a4a; border-radius: 12px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+          .history-item .h-title { flex: 1; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .history-item .h-meta { font-size: 11px; color: #9a9aba; margin-top: 4px; font-weight: 600; }
+          .history-item .h-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: rgba(255,152,0,.15); color: #ff9800; border: 1px solid rgba(255,152,0,.3); flex-shrink: 0; }
+          .empty { text-align: center; color: #6a6a8a; padding: 40px 20px; font-size: 14px; font-weight: 600; }
           </style>
           </head>
           <body>
+
+          <div id="splash">
+          <div class="splash-logo">JokerDownloader</div>
+          <div class="splash-sub">تم صنع هذا البرنامج بواسطة <span>جوكريتش - Jokerich</span></div>
+          <div class="splash-loader"></div>
+          </div>
+
+          <div class="navbar" id="navbar" style="display:none">
+          <button class="nav-btn active" onclick="showPage('home', this)">الصفحة الرئيسية</button>
+          <button class="nav-btn" onclick="showPage('downloads', this)">التنزيلات</button>
+          </div>
+
+          <div class="page active" id="page-home">
           <h1>تحميل الفيديوهات</h1>
-          <div id="status" class="status-msg">جاري تهيئة المحرك...</div>
-          <div id="main" style="display:none">
+          <div id="status" class="status-msg" style="display:none"></div>
+          <div id="main">
           <div class="url-box"><input id="url" type="text" placeholder="أدخل رابط فيديو يوتيوب..."></div>
           <div class="preview" id="preview" style="display:none">
           <img id="thumb" src="">
@@ -337,23 +463,86 @@ jobs:
           <button data-q="192">192kbps</button>
           <button data-q="128">128kbps</button>
           </div></div>
+          <div class="section">
+          <div class="trim-row">
+          <div class="label" style="margin:0">تنزيل جزء مخصص</div>
+          <div class="switch" id="trimSwitch" onclick="toggleTrim()"></div>
+          </div>
+          <div class="trim-container" id="trimBox">
+          <div class="time-inputs">
+          <div class="time-field"><label>وقت البداية</label><input type="text" id="startTime" value="00:00" oninput="updateTrimInfo()"></div>
+          <div class="time-field"><label>وقت النهاية</label><input type="text" id="endTime" value="00:00" oninput="updateTrimInfo()"></div>
+          </div>
+          <div class="trim-info" id="trimInfo">اكتب الوقت بصيغة MM:SS أو HH:MM:SS</div>
+          </div>
+          </div>
           <button class="btn-download" id="dlBtn" onclick="startDownload()">تنزيل الآن</button>
           <div class="progress-card" id="progCard" style="display:none">
           <div class="top"><span class="name" id="pName">جاري التحميل...</span><span class="pct" id="pPct">0%</span></div>
           <div class="bar"><div class="bar-fill" id="pBar"></div></div>
           </div>
           </div>
+          </div>
+
+          <div class="page" id="page-downloads">
+          <h1>التنزيلات</h1>
+          <div id="historyList"><div class="empty">لسه مفيش تنزيلات</div></div>
+          </div>
+
           <div class="footer">جميع الحقوق محفوظة لـ @JOKERICH</div>
+
           <script>
-          var fmt = 'mp4', quality = '1080', pollTimer = null;
+          var fmt = 'mp4', quality = '1080', trim = false, pollTimer = null, videoDuration = 0;
+
+          setTimeout(function() {
+          document.getElementById('splash').classList.add('hide');
+          document.getElementById('navbar').style.display = '';
+          }, 5000);
+
+          function showPage(name, btn) {
+          document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+          document.getElementById('page-' + name).classList.add('active');
+          document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          if (name === 'downloads') loadHistory();
+          }
+
+          function parseTime(str) {
+          str = (str || '').trim();
+          if (!str) return 0;
+          var parts = str.split(':').map(x => x.trim()).filter(x => x !== '');
+          for (var i = 0; i < parts.length; i++) { if (isNaN(+parts[i])) return -1; }
+          if (parts.length === 2) return (+parts[0]) * 60 + (+parts[1]);
+          if (parts.length === 3) return (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parts[2]);
+          if (parts.length === 1) return +parts[0];
+          return -1;
+          }
+
+          function fmtTime(s) {
+          s = Math.floor(s);
+          var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+          if (h > 0) return h + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+          return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+          }
+
+          function updateTrimInfo() {
+          var s = parseTime(document.getElementById('startTime').value);
+          var e = parseTime(document.getElementById('endTime').value);
+          var info = document.getElementById('trimInfo');
+          if (s < 0 || e < 0) { info.textContent = '❌ صيغة الوقت غير صحيحة'; return; }
+          if (e <= s) { info.textContent = '⚠️ وقت النهاية لازم يكون بعد البداية'; return; }
+          info.textContent = '✅ هينزل من ' + fmtTime(s) + ' إلى ' + fmtTime(e) + ' — المدة: ' + fmtTime(e - s);
+          }
+
           window.onYtdlpReady = function() {
           document.getElementById('status').style.display = 'none';
-          document.getElementById('main').style.display = '';
           };
           window.onYtdlpError = function(msg) {
+          document.getElementById('status').style.display = '';
           document.getElementById('status').textContent = 'خطأ: ' + msg;
           document.getElementById('status').style.color = '#ff4d4d';
           };
+
           function setFmt(f) {
           fmt = f;
           document.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('active', b.dataset.fmt === f));
@@ -362,6 +551,7 @@ jobs:
           var active = document.querySelector('#videoQ button.active, #audioQ button.active');
           if (active) quality = active.dataset.q;
           }
+
           document.querySelectorAll('#videoQ button, #audioQ button').forEach(b => {
           b.onclick = () => {
           b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active'));
@@ -369,13 +559,21 @@ jobs:
           quality = b.dataset.q;
           };
           });
+
+          function toggleTrim() {
+          trim = !trim;
+          document.getElementById('trimSwitch').classList.toggle('on', trim);
+          document.getElementById('trimBox').classList.toggle('active', trim);
+          if (trim && videoDuration > 0) {
+          document.getElementById('startTime').value = '00:00';
+          document.getElementById('endTime').value = fmtTime(videoDuration);
+          updateTrimInfo();
+          }
+          }
+
           document.getElementById('url').addEventListener('blur', loadInfo);
           document.getElementById('url').addEventListener('change', loadInfo);
-          function fmtTime(s) {
-          s = Math.floor(s);
-          var m = Math.floor(s/60), sec = s%60;
-          return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
-          }
+
           function loadInfo() {
           var url = document.getElementById('url').value.trim();
           if (!url) return;
@@ -384,30 +582,44 @@ jobs:
           var res = Android.getVideoInfo(url);
           var d = JSON.parse(res);
           if (d.ok) {
+          videoDuration = d.duration;
           document.getElementById('preview').style.display = '';
           document.getElementById('thumb').src = d.thumbnail;
           document.getElementById('vtitle').textContent = d.title;
           document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
+          if (trim) {
+          document.getElementById('endTime').value = fmtTime(d.duration);
+          updateTrimInfo();
+          }
           }
           } catch(e) {}
           }, 100);
           }
+
           function startDownload() {
           var url = document.getElementById('url').value.trim();
           if (!url) { alert('الرجاء إدخال رابط'); return; }
+          var start = 0, end = 0;
+          if (trim) {
+          start = parseTime(document.getElementById('startTime').value);
+          end = parseTime(document.getElementById('endTime').value);
+          if (start < 0 || end < 0) { alert('صيغة الوقت غير صحيحة'); return; }
+          if (end <= start) { alert('وقت النهاية لازم يكون بعد البداية'); return; }
+          }
           document.getElementById('dlBtn').disabled = true;
           document.getElementById('progCard').style.display = '';
           document.getElementById('pName').textContent = 'جاري التحميل...';
           document.getElementById('pPct').textContent = '0%';
           document.getElementById('pBar').style.width = '0%';
           try {
-          var taskId = Android.startDownload(url, fmt, quality, false, 0, 0);
+          var taskId = Android.startDownload(url, fmt, quality, trim, start, end);
           poll(taskId);
           } catch(e) {
           document.getElementById('pName').textContent = 'خطأ: ' + e.message;
           document.getElementById('dlBtn').disabled = false;
           }
           }
+
           function poll(id) {
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = setInterval(function() {
@@ -431,6 +643,25 @@ jobs:
           }
           } catch(e) {}
           }, 800);
+          }
+
+          function loadHistory() {
+          try {
+          var arr = JSON.parse(Android.getHistory());
+          var box = document.getElementById('historyList');
+          if (!arr.length) {
+          box.innerHTML = '<div class="empty">لسه مفيش تنزيلات</div>';
+          return;
+          }
+          var html = '';
+          for (var i = 0; i < arr.length; i++) {
+          var h = arr[i];
+          var q = h.format === 'MP3' ? h.quality + 'kbps' : h.quality + 'p';
+          var trimTag = h.trim ? ' • مقطع' : '';
+          html += '<div class="history-item"><div style="flex:1;min-width:0"><div class="h-title">' + h.title + '</div><div class="h-meta">' + h.date + ' • ' + q + trimTag + '</div></div><div class="h-badge">' + h.format + '</div></div>';
+          }
+          box.innerHTML = html;
+          } catch(e) {}
           }
           </script>
           </body>
