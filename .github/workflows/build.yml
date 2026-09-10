@@ -96,10 +96,12 @@ jobs:
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <application android:label="JokerDownloader"
                   android:usesCleartextTraffic="true"
-                  android:theme="@android:style/Theme.Material.NoActionBar"
+                  android:hardwareAccelerated="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
                   android:extractNativeLibs="true">
                   <activity android:name=".MainActivity" android:exported="true"
-                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      android:windowSoftInputMode="adjustResize"
+                      android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|uiMode">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -119,6 +121,7 @@ jobs:
           import android.webkit.WebViewClient
           import com.yausername.youtubedl_android.YoutubeDL
           import com.yausername.youtubedl_android.YoutubeDLRequest
+          import com.yausername.youtubedl_android.UpdateChannel
           import kotlinx.coroutines.CoroutineScope
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.SupervisorJob
@@ -154,6 +157,7 @@ jobs:
                       domStorageEnabled = true
                       allowFileAccess = true
                       databaseEnabled = true
+                      setSupportZoom(false)
                   }
                   webView.webViewClient = WebViewClient()
                   webView.addJavascriptInterface(Bridge(), "Android")
@@ -164,6 +168,10 @@ jobs:
                   scope.launch {
                       try {
                           YoutubeDL.getInstance().init(applicationContext)
+                          try {
+                              YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel.STABLE)
+                          } catch (e: Throwable) {
+                          }
                           withContext(Dispatchers.Main) {
                               webView.evaluateJavascript("window.onYtdlpReady && window.onYtdlpReady()", null)
                           }
@@ -217,11 +225,11 @@ jobs:
                                   request.addOption("--audio-format", "mp3")
                                   request.addOption("--audio-quality", quality + "k")
                               } else {
-                                  request.addOption("-f", "bestvideo[height<=" + quality + "]+bestaudio/best[height<=" + quality + "]/best")
+                                  request.addOption("-f", "best[height<=" + quality + "]/bestvideo[height<=" + quality + "]+bestaudio/best")
                                   request.addOption("--merge-output-format", "mp4")
                               }
                               tasks[taskId]?.status = "downloading"
-                              val response = YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
+                              YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
                                   tasks[taskId]?.progress = progress
                               }
                               tasks[taskId]?.status = "done"
@@ -241,7 +249,7 @@ jobs:
                       val t = tasks[taskId] ?: return "{\"status\":\"not_found\"}"
                       return JSONObject().apply {
                           put("status", t.status)
-                          put("percent", t.progress)
+                          put("percent", t.progress.toDouble())
                           put("filename", t.filename)
                           put("error", t.error)
                       }.toString()
@@ -267,7 +275,7 @@ jobs:
           body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); color: #fff; min-height: 100vh; padding: 18px 14px 90px; }
           h1 { font-size: 22px; text-align: center; margin-bottom: 20px; font-weight: 800; background: linear-gradient(135deg, #fff, #b0b0d0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
           .url-box { display: flex; gap: 8px; margin-bottom: 16px; }
-          .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: #1a1a35; border: 1px solid #2a2a4a; color: #fff; font-size: 14px; outline: none; font-family: inherit; }
+          .url-box input { flex: 1; padding: 14px; border-radius: 14px; background: #1a1a35; border: 1px solid #2a2a4a; color: #fff; font-size: 14px; outline: none; font-family: inherit; -webkit-user-select: text; user-select: text; }
           .url-box input::placeholder { color: #7a7a9a; }
           .preview { background: linear-gradient(135deg, #1a1a3a, #2a1a5e); border-radius: 16px; padding: 12px; display: flex; gap: 12px; margin-bottom: 18px; border: 1px solid #2a2a4a; }
           .preview img { width: 120px; height: 80px; border-radius: 10px; object-fit: cover; background: #000; }
@@ -392,16 +400,18 @@ jobs:
           function loadInfo() {
               var url = document.getElementById('url').value.trim();
               if (!url) return;
-              try {
-                  var res = Android.getVideoInfo(url);
-                  var d = JSON.parse(res);
-                  if (d.ok) {
-                      document.getElementById('preview').style.display = '';
-                      document.getElementById('thumb').src = d.thumbnail;
-                      document.getElementById('vtitle').textContent = d.title;
-                      document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
-                  }
-              } catch(e) {}
+              setTimeout(function() {
+                  try {
+                      var res = Android.getVideoInfo(url);
+                      var d = JSON.parse(res);
+                      if (d.ok) {
+                          document.getElementById('preview').style.display = '';
+                          document.getElementById('thumb').src = d.thumbnail;
+                          document.getElementById('vtitle').textContent = d.title;
+                          document.getElementById('vdur').textContent = '⏱ ' + fmtTime(d.duration);
+                      }
+                  } catch(e) {}
+              }, 100);
           }
 
           function startDownload() {
