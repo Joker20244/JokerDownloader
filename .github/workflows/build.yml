@@ -71,7 +71,7 @@ jobs:
                   versionCode 1
                   versionName "1.0"
                   ndk {
-                      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+                      abiFilters 'armeabi-v7a', 'arm64-v8a'
                   }
               }
               compileOptions {
@@ -130,6 +130,7 @@ jobs:
           import android.webkit.WebViewClient
           import com.yausername.youtubedl_android.YoutubeDL
           import com.yausername.youtubedl_android.YoutubeDLRequest
+          import com.yausername.ffmpeg.FFmpeg
           import kotlinx.coroutines.CoroutineScope
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.SupervisorJob
@@ -189,6 +190,10 @@ jobs:
                   scope.launch {
                       try {
                           YoutubeDL.getInstance().init(applicationContext)
+                          try {
+                              FFmpeg.getInstance().init(applicationContext)
+                          } catch (e: Throwable) {
+                          }
                           try {
                               YoutubeDL.getInstance().updateYoutubeDL(applicationContext, YoutubeDL.UpdateChannel.STABLE)
                           } catch (e: Throwable) {
@@ -311,12 +316,13 @@ jobs:
                               request.addOption("--socket-timeout", "15")
                               request.addOption("--retries", "10")
                               request.addOption("--fragment-retries", "10")
+                              request.addOption("--no-part")
                               if (format == "mp3") {
                                   request.addOption("-x")
                                   request.addOption("--audio-format", "mp3")
                                   request.addOption("--audio-quality", quality + "k")
                               } else {
-                                  request.addOption("-f", "bv*[height<=" + quality + "]+ba/b[height<=" + quality + "]/bv*+ba/b")
+                                  request.addOption("-f", "best[height<=" + quality + "]/bestvideo[height<=" + quality + "]+bestaudio/best")
                                   request.addOption("--merge-output-format", "mp4")
                               }
                               if (trim && end > start) {
@@ -385,20 +391,21 @@ jobs:
           <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Reem+Kufi:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
           * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); color: #fff; min-height: 100vh; padding: 0 14px 90px; font-weight: 400; }
+          html, body { min-height: 100vh; }
+          body { font-family: 'Cairo', sans-serif; background: radial-gradient(circle at 20% 0%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); background-attachment: fixed; color: #fff; padding: 0 14px; font-weight: 400; display: flex; flex-direction: column; }
 
           #splash { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 40%, #2a1a5e 0%, #0b0b1f 55%, #000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .8s ease, visibility .8s; }
           #splash.hide { opacity: 0; visibility: hidden; }
-          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -1px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: glow 2s ease-in-out infinite alternate; margin-bottom: 20px; text-align: center; line-height: 1.2; padding: 0 20px; }
+          .splash-logo { font-family: 'Reem Kufi', 'Cairo', sans-serif; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; background: linear-gradient(135deg, #ff9800 0%, #ffcc66 40%, #4a9eff 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: glow 2s ease-in-out infinite alternate; margin-bottom: 14px; text-align: center; line-height: 1.2; padding: 0 20px; }
           @keyframes glow { from { filter: drop-shadow(0 0 8px rgba(255,152,0,.4)); } to { filter: drop-shadow(0 0 24px rgba(74,158,255,.6)); } }
-          .splash-sub { font-family: 'Cairo', sans-serif; font-size: 14px; color: #b0b0d0; font-weight: 600; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; }
+          .splash-sub { font-family: 'Cairo', sans-serif; font-size: 12px; color: #b0b0d0; font-weight: 600; opacity: 0.9; text-align: center; animation: fadeUp 1.5s ease .4s both; padding: 0 20px; }
           .splash-sub span { color: #ff9800; font-weight: 800; }
           @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: .9; transform: translateY(0); } }
-          .splash-loader { margin-top: 40px; width: 60px; height: 3px; background: #2a2a4a; border-radius: 3px; overflow: hidden; }
+          .splash-loader { margin-top: 30px; width: 50px; height: 3px; background: #2a2a4a; border-radius: 3px; overflow: hidden; }
           .splash-loader::after { content: ''; display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #ff9800, #4a9eff); border-radius: 3px; animation: load 1.6s ease-in-out infinite; }
           @keyframes load { 0% { transform: translateX(150%); } 100% { transform: translateX(-250%); } }
 
-          .navbar { display: flex; gap: 6px; background: rgba(26,26,53,.85); border: 1px solid #2a2a4a; border-radius: 14px; padding: 6px; margin: 14px 0 20px; }
+          .navbar { display: flex; gap: 6px; background: rgba(26,26,53,.85); border: 1px solid #2a2a4a; border-radius: 14px; padding: 6px; margin: 14px 0 20px; flex-shrink: 0; }
           .nav-btn { flex: 1; padding: 12px; background: transparent; border: none; color: #b0b0d0; font-family: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; cursor: pointer; }
           .nav-btn.active { background: linear-gradient(135deg, #4a9eff, #2a5ecf); color: #fff; box-shadow: 0 4px 14px rgba(74,158,255,.35); }
 
@@ -443,7 +450,6 @@ jobs:
           .progress-card .pct { color: #4a9eff; font-weight: 800; }
           .bar { height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden; }
           .bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #ff9800); width: 0%; transition: width .3s; }
-          .footer { text-align: center; font-size: 11px; color: #6a6a8a; position: fixed; bottom: 20px; left: 0; right: 0; font-weight: 600; }
           .status-msg { text-align: center; padding: 20px; font-size: 14px; color: #ff9800; font-weight: 700; }
           .loading-mini { display: inline-block; width: 14px; height: 14px; border: 2px solid #2a2a4a; border-top-color: #4a9eff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-left: 8px; }
           @keyframes spin { to { transform: rotate(360deg); } }
@@ -453,6 +459,9 @@ jobs:
           .history-item .h-meta { font-size: 11px; color: #9a9aba; margin-top: 4px; font-weight: 600; }
           .history-item .h-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: rgba(255,152,0,.15); color: #ff9800; border: 1px solid rgba(255,152,0,.3); flex-shrink: 0; }
           .empty { text-align: center; color: #6a6a8a; padding: 40px 20px; font-size: 14px; font-weight: 600; }
+
+          .main-content { flex: 1; padding-bottom: 20px; }
+          .footer { text-align: center; font-size: 11px; color: #6a6a8a; padding: 20px 0 30px; font-weight: 600; margin-top: auto; }
           </style>
           </head>
           <body>
@@ -468,6 +477,7 @@ jobs:
           <button class="nav-btn" onclick="showPage('downloads', this)">التنزيلات</button>
           </div>
 
+          <div class="main-content">
           <div class="page active" id="page-home">
           <h1>تحميل الفيديوهات</h1>
           <div id="status" class="status-msg" style="display:none"></div>
@@ -519,6 +529,7 @@ jobs:
           <div class="page" id="page-downloads">
           <h1>التنزيلات</h1>
           <div id="historyList"><div class="empty">لسه مفيش تنزيلات</div></div>
+          </div>
           </div>
 
           <div class="footer">جميع الحقوق محفوظة لـ @JOKERICH</div>
