@@ -41,7 +41,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url 'https://jitpack.io' }
               }
           }
           rootProject.name = "JokerDownloader"
@@ -71,6 +70,9 @@ jobs:
                   targetSdk 34
                   versionCode 1
                   versionName "1.0"
+                  ndk {
+                      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+                  }
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -84,8 +86,8 @@ jobs:
               }
           }
           dependencies {
-              implementation 'com.github.yausername.youtubedl-android:library:0.17.4'
-              implementation 'com.github.yausername.youtubedl-android:ffmpeg:0.17.4'
+              implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+              implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
               implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
           }
           EOF
@@ -94,9 +96,13 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <application android:label="JokerDownloader"
                   android:usesCleartextTraffic="true"
                   android:hardwareAccelerated="true"
+                  android:extractNativeLibs="true"
+                  android:requestLegacyExternalStorage="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true"
                       android:windowSoftInputMode="adjustResize"
@@ -146,7 +152,7 @@ jobs:
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  downloadDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
+                  downloadDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "JokerDownloader")
                   downloadDir.mkdirs()
 
                   webView = WebView(this)
@@ -166,6 +172,10 @@ jobs:
                   scope.launch {
                       try {
                           YoutubeDL.getInstance().init(applicationContext)
+                          try {
+                              YoutubeDL.getInstance().updateYoutubeDL(applicationContext, YoutubeDL.UpdateChannel.STABLE)
+                          } catch (e: Throwable) {
+                          }
                           withContext(Dispatchers.Main) {
                               webView.evaluateJavascript("window.onYtdlpReady && window.onYtdlpReady()", null)
                           }
