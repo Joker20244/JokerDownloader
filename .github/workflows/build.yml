@@ -975,12 +975,18 @@ jobs:
       - name: Sign APK Manually
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > /tmp/keystore.jks
-          APKSIGNER=$(ls /usr/local/lib/android/sdk/build-tools/34.0.0/apksigner)
+          APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name apksigner | head -1)
+          echo "Using apksigner: $APKSIGNER"
+          KEY_ALIAS=$(keytool -list -keystore /tmp/keystore.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>/dev/null | grep "PrivateKeyEntry" | head -1 | cut -d',' -f1 | tr -d ' ')
+          if [ -z "$KEY_ALIAS" ]; then
+            KEY_ALIAS=$(keytool -list -keystore /tmp/keystore.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>/dev/null | grep "Alias name:" | head -1 | cut -d':' -f2 | tr -d ' ')
+          fi
+          echo "Detected alias: $KEY_ALIAS"
           $APKSIGNER sign \
             --ks /tmp/keystore.jks \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+            --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+            --ks-key-alias "$KEY_ALIAS" \
             --out app/build/outputs/apk/debug/app-signed.apk \
             app/build/outputs/apk/debug/app-debug.apk
           rm /tmp/keystore.jks
