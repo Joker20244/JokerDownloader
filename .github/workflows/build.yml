@@ -374,6 +374,7 @@ jobs:
                               request.addOption("--retries", "10")
                               request.addOption("--fragment-retries", "10")
                               request.addOption("--no-part")
+                              request.addOption("--newline")
                               if (format == "mp3") {
                                   request.addOption("-x")
                                   request.addOption("--audio-format", "mp3")
@@ -388,7 +389,10 @@ jobs:
                               }
                               tasks[taskId]?.status = "downloading"
                               YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
-                                  tasks[taskId]?.progress = progress
+                                  val p = if (progress <= 1.0f) progress * 100f else progress
+                                  if (p > (tasks[taskId]?.progress ?: 0f)) {
+                                      tasks[taskId]?.progress = p
+                                  }
                               }
                               val newest = downloadDir.listFiles()?.maxByOrNull { it.lastModified() }
                               if (newest != null) {
@@ -963,8 +967,18 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: app/build/outputs/apk/debug
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: JokerDownloader-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: JokerDownloader-Signed-APK
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
