@@ -967,6 +967,11 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --no-daemon
 
+      - name: Install Build Tools
+        run: |
+          echo "y" | sdkmanager "build-tools;29.0.3"
+          echo "y" | sdkmanager --licenses
+
       - name: Sign APK
         uses: r0adkll/sign-android-release@v1
         id: sign_app
