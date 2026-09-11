@@ -409,7 +409,18 @@ jobs:
                               }
                               tasks[taskId]?.status = "downloading"
                               YoutubeDL.getInstance().execute(request, taskId) { progress, eta, line ->
-                                  val p = if (progress <= 1.0f) progress * 100f else progress
+                                  var p = 0f
+                                  if (line != null) {
+                                      val match = Regex("\\[download\\]\\s+(\\d+(?:\\.\\d+)?)%").find(line)
+                                      if (match != null) {
+                                          val num = match.groupValues[1].toFloatOrNull() ?: 0f
+                                          p = num.toInt().toFloat()
+                                      }
+                                  }
+                                  if (p == 0f && progress > 0f) {
+                                      val num = if (progress <= 1.0f) progress * 100f else progress
+                                      p = num.toInt().toFloat()
+                                  }
                                   if (p > (tasks[taskId]?.progress ?: 0f)) {
                                       tasks[taskId]?.progress = p
                                   }
