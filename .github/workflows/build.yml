@@ -969,21 +969,24 @@ jobs:
 
       - name: Install Build Tools
         run: |
-          echo "y" | sdkmanager "build-tools;29.0.3"
+          echo "y" | sdkmanager "build-tools;34.0.0"
           echo "y" | sdkmanager --licenses
 
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: app/build/outputs/apk/debug
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+      - name: Sign APK Manually
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > /tmp/keystore.jks
+          APKSIGNER=$(ls /usr/local/lib/android/sdk/build-tools/34.0.0/apksigner)
+          $APKSIGNER sign \
+            --ks /tmp/keystore.jks \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --out app/build/outputs/apk/debug/app-signed.apk \
+            app/build/outputs/apk/debug/app-debug.apk
+          rm /tmp/keystore.jks
 
       - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
           name: JokerDownloader-Signed-APK
-          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          path: app/build/outputs/apk/debug/app-signed.apk
